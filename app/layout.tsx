@@ -1,20 +1,29 @@
-"use client";
-
 import "./globals.css";
-import * as React from "react";
-import { TamboProvider } from "@tambo-ai/react";
+import type { Metadata } from "next";
+import { Inter, Fraunces } from "next/font/google";
+import { Toaster } from "@/components/ui/sonner";
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+const sans = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
+
+const display = Fraunces({
+  subsets: ["latin"],
+  variable: "--font-display",
+});
+
+export const metadata: Metadata = {
+  title: "Tambo Planner",
+  description: "Plan your day with Tambo + calendar context",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body>
-        <TamboProvider apiKey={process.env.NEXT_PUBLIC_TAMBO_API_KEY!}>
-          {children}
-        </TamboProvider>
+    <html lang="en" className={`${sans.variable} ${display.variable}`}>
+      <body className="min-h-screen bg-warm font-[var(--font-sans)]">
+        {children}
+        <Toaster richColors />
       </body>
     </html>
   );

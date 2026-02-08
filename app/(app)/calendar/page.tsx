@@ -22,6 +22,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
+import { ImportIcsButton } from "@/components/calendar/ImportIcsButton";
+
 type DbEvent = {
   id: string;
   user_id: string;
@@ -218,6 +220,7 @@ export default function CalendarPage() {
 
   return (
     <div className="space-y-4">
+      
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="font-display text-2xl tracking-tight">Calendar</div>
@@ -225,19 +228,23 @@ export default function CalendarPage() {
             Click and drag to create. Click an event to edit.
           </div>
         </div>
+        
+        <div className="flex items-center gap-2">
+          <ImportIcsButton onImported={() => fetchEvents()} />
 
-        <Button
-          variant="secondary"
-          onClick={() => {
-            const now = new Date();
-            const end = new Date(now);
-            end.setMinutes(end.getMinutes() + 30);
-            openCreate(now, end);
-          }}
-          className="rounded-full"
-        >
-          Add event
-        </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              const now = new Date();
+              const end = new Date(now);
+              end.setMinutes(end.getMinutes() + 30);
+              openCreate(now, end);
+            }}
+            className="rounded-full"
+          >
+            Add event
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-[24px] border bg-card/40 p-3">

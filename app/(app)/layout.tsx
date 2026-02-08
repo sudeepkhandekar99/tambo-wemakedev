@@ -4,17 +4,13 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { toast } from "sonner";
-
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 function NavLink({
   href,
-  children,
+  label,
 }: {
   href: string;
-  children: React.ReactNode;
+  label: string;
 }) {
   const pathname = usePathname();
   const active = pathname === href;
@@ -22,44 +18,44 @@ function NavLink({
   return (
     <Link
       href={href}
-      className={cn(
-        "rounded-full px-3 py-1.5 text-sm transition",
-        "hover:bg-muted/50 active:scale-[0.99]",
-        active ? "bg-muted/60 text-foreground" : "text-muted-foreground"
-      )}
+      className={[
+        "relative rounded-full px-3 py-1.5 text-sm transition-colors",
+        active
+          ? "text-foreground"
+          : "text-muted-foreground hover:text-foreground",
+      ].join(" ")}
     >
-      {children}
+      {label}
+      {active ? (
+        <span className="pointer-events-none absolute left-3 right-3 -bottom-1 h-[2px] rounded-full bg-foreground/70" />
+      ) : null}
     </Link>
   );
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const [ready, setReady] = React.useState(false);
+  const [email, setEmail] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let mounted = true;
 
-    async function boot() {
-      const { data, error } = await supabase.auth.getSession();
-      if (error) {
-        console.error(error);
-        toast.error("Auth init failed");
-      }
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!mounted) return;
 
-      if (!data.session) {
+      const session = data.session;
+      if (!session) {
         router.replace("/login");
         return;
       }
-
-      if (mounted) setReady(true);
-    }
-
-    boot();
+      setEmail(session.user.email ?? null);
+    })();
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
       if (!session) router.replace("/login");
-      else setReady(true);
+      else setEmail(session.user.email ?? null);
     });
 
     return () => {
@@ -70,56 +66,51 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   async function logout() {
     await supabase.auth.signOut();
-    toast.message("Signed out");
     router.replace("/login");
-  }
-
-  if (!ready) {
-    return (
-      <div className="min-h-screen bg-background">
-        <div className="mx-auto flex min-h-screen max-w-6xl items-center px-6 text-muted-foreground">
-          Loading…
-        </div>
-      </div>
-    );
   }
 
   return (
     <div className="min-h-screen bg-background">
       {/* Top bar */}
-      <div className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link
-            href="/"
-            className="group inline-flex items-center gap-2 rounded-2xl px-2 py-1 transition hover:bg-muted/40 active:scale-[0.99]"
-          >
-            <span className="text-lg font-semibold tracking-tight">
-              tambo planner
-            </span>
-            <span className="rounded-full bg-muted/50 px-2 py-0.5 text-xs text-muted-foreground">
-              hack
-            </span>
-          </Link>
+      <header className="sticky top-0 z-50 border-b bg-background/70 backdrop-blur">
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
+          <div className="flex items-center gap-3">
+            <div className="font-display text-lg tracking-tight">tambo planner</div>
+            <div className="hidden sm:flex items-center gap-1 rounded-full bg-muted/40 px-2 py-1">
+              <NavLink href="/chat" label="Chat" />
+              <NavLink href="/calendar" label="Calendar" />
+              <NavLink href="/billing" label="Billing" />
+            </div>
+          </div>
 
           <div className="flex items-center gap-2">
-            <NavLink href="/">Chat</NavLink>
-            <NavLink href="/calendar">Calendar</NavLink>
-            <NavLink href="/billing">Billing</NavLink>
-            <NavLink href="/profile">Profile</NavLink>
-
-            <Button
-              variant="ghost"
+            <Link
+              href="/profile"
+              className="rounded-full bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {email ? email.split("@")[0] : "Profile"}
+            </Link>
+            <button
               onClick={logout}
-              className="h-9 rounded-full px-3 transition active:scale-[0.99]"
+              className="rounded-full bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors active:scale-[0.99]"
             >
               Logout
-            </Button>
+            </button>
           </div>
         </div>
-      </div>
 
-      {/* Page content */}
-      <main className="mx-auto max-w-6xl px-6 py-6">{children}</main>
+        {/* Mobile nav */}
+        <div className="sm:hidden border-t">
+          <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-2">
+            <NavLink href="/chat" label="Chat" />
+            <NavLink href="/calendar" label="Calendar" />
+            <NavLink href="/billing" label="Billing" />
+          </div>
+        </div>
+      </header>
+
+      {/* Page */}
+      <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
     </div>
   );
 }

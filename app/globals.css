@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-xl: var(--radius);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-container: var(--container);
+  --color-backdrop: var(--backdrop);
+  --color-muted-backdrop: var(--muted-backdrop);
+}
+
+:root {
+  --radius: 20px;
+
+  /* Warm pastel theme */
+  --background: 60 28% 96%;
+  --foreground: 222 22% 16%;
+  --card: 60 30% 97%;
+  --card-foreground: 222 22% 16%;
+  --popover: 60 30% 97%;
+  --popover-foreground: 222 22% 16%;
+  --primary: 168 28% 32%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 44 35% 92%;
+  --secondary-foreground: 222 22% 16%;
+  --muted: 50 22% 92%;
+  --muted-foreground: 215 12% 38%;
+  --accent: 18 62% 92%;
+  --accent-foreground: 222 22% 16%;
+  --destructive: 0 72% 50%;
+  --border: 220 10% 86%;
+  --input: 220 10% 86%;
+  --ring: 168 28% 32%;
+    --chart-1: oklch(0.72 0.15 60);
+    --chart-2: oklch(0.62 0.2 6);
+    --chart-3: oklch(0.53 0.2 262);
+    --chart-4: oklch(0.7 0.13 165);
+    --chart-5: oklch(0.62 0.2 313);
+    --container: oklch(0.98 0 247);
+    --backdrop: oklch(0.25 0.07 252 / 0.25);
+    --muted-backdrop: oklch(0.25 0.07 252 / 0.1);
+    --panel-left-width: 500px;
+    --panel-right-width: 500px;
+    --sidebar-width: 3rem;
+}
+
+.dark {
+  --background: 222 22% 10%;
+  --foreground: 0 0% 98%;
+  --card: 222 22% 12%;
+  --card-foreground: 0 0% 98%;
+  --popover: 222 22% 12%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 168 28% 52%;
+  --primary-foreground: 222 22% 10%;
+  --secondary: 222 18% 16%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 222 18% 16%;
+  --muted-foreground: 215 18% 72%;
+  --accent: 18 42% 22%;
+  --accent-foreground: 0 0% 98%;
+  --border: 222 18% 18%;
+  --input: 222 18% 18%;
+  --ring: 168 28% 52%;
+    --destructive: oklch(0.704 0.191 22.216);
+    --chart-1: oklch(0.72 0.15 60);
+    --chart-2: oklch(0.62 0.2 6);
+    --chart-3: oklch(0.53 0.2 262);
+    --chart-4: oklch(0.7 0.13 165);
+    --chart-5: oklch(0.62 0.2 313);
+    --container: oklch(0.22 0 0);
+    --backdrop: oklch(0.85 0 0 / 0.15);
+    --muted-backdrop: oklch(0.85 0 0 / 0.08);
+    --radius: 0.5rem;
+    --panel-left-width: 500px;
+    --panel-right-width: 500px;
+    --sidebar-width: 3rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+      Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  }
+}

@@ -18,6 +18,23 @@ type DbEvent = {
   source: string | null;
 };
 
+type Goal = { id: string; text: string; enabled: boolean };
+
+type TimeBlock = {
+  id: string;
+  label: string;
+  days: string[]; // ["mon","wed"]
+  start: string; // "14:00"
+  end: string; // "16:00"
+  enabled: boolean;
+};
+
+type Preferences = {
+  timezone?: string;
+  goals?: Goal[];
+  timeBlocks?: TimeBlock[];
+};
+
 function startOfDay(d: Date) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -35,6 +52,17 @@ async function requireUserId() {
   if (error) throw new Error(error.message);
   if (!data.user?.id) throw new Error("Not logged in");
   return data.user.id;
+}
+
+async function getPreferences(userId: string): Promise<Preferences> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("preferences_json")
+    .eq("id", userId)
+    .single();
+
+  if (error) return {};
+  return (data?.preferences_json ?? {}) as Preferences;
 }
 
 /* =========================
@@ -172,58 +200,60 @@ export function TamboChatProvider({
         },
 
         {
-            name: "create_events",
-            description:
-                "Create one or more calendar events for the user. Accepts events as objects or JSON strings.",
-            inputSchema: createEventsInput,
-            outputSchema: createEventsOutput,
-            tool: async ({ events }: z.infer<typeof createEventsInput>) => {
-                const userId = await requireUserId();
+          name: "create_events",
+          description:
+            "Create one or more calendar events for the user. Accepts events as objects or JSON strings.",
+          inputSchema: createEventsInput,
+          outputSchema: createEventsOutput,
+          tool: async ({ events }: z.infer<typeof createEventsInput>) => {
+            const userId = await requireUserId();
 
-                // Normalize: convert JSON strings -> objects
-                const normalized = events.map((e) => {
-                if (typeof e === "string") {
-                    try {
-                    return JSON.parse(e) as {
-                        title: string;
-                        startISO: string;
-                        endISO: string;
-                        memo?: string | null;
-                        source?: string;
-                    };
-                    } catch {
-                    throw new Error("create_events received an invalid JSON string event.");
-                    }
+            // Normalize: convert JSON strings -> objects
+            const normalized = events.map((e) => {
+              if (typeof e === "string") {
+                try {
+                  return JSON.parse(e) as {
+                    title: string;
+                    startISO: string;
+                    endISO: string;
+                    memo?: string | null;
+                    source?: string;
+                  };
+                } catch {
+                  throw new Error(
+                    "create_events received an invalid JSON string event."
+                  );
                 }
-                return e;
-                });
+              }
+              return e;
+            });
 
-                const rows = normalized.map((e) => {
-                const start = new Date(e.startISO);
-                const end = new Date(e.endISO);
+            const rows = normalized.map((e) => {
+              const start = new Date(e.startISO);
+              const end = new Date(e.endISO);
 
-                if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-                    throw new Error(
-                    `Invalid time value in create_events. startISO=${e.startISO} endISO=${e.endISO}`
-                    );
-                }
+              if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+                throw new Error(
+                  `Invalid time value in create_events. startISO=${e.startISO} endISO=${e.endISO}`
+                );
+              }
 
-                return {
-                    user_id: userId,
-                    title: e.title,
-                    start_ts: start.toISOString(),
-                    end_ts: end.toISOString(),
-                    memo: e.memo ?? null,
-                    source: e.source ?? "ai",
-                };
-                });
+              return {
+                user_id: userId,
+                title: e.title,
+                start_ts: start.toISOString(),
+                end_ts: end.toISOString(),
+                memo: e.memo ?? null,
+                source: e.source ?? "ai",
+              };
+            });
 
-                const { error } = await supabase.from("events").insert(rows);
-                if (error) throw new Error(error.message);
+            const { error } = await supabase.from("events").insert(rows);
+            if (error) throw new Error(error.message);
 
-                toast.success(`Added ${rows.length} event(s)`);
-                return { created: rows.length };
-            },
+            toast.success(`Added ${rows.length} event(s)`);
+            return { created: rows.length };
+          },
         },
 
         {
@@ -289,9 +319,13 @@ export function TamboChatProvider({
           const end = endOfDay(base);
 
           let events: DbEvent[] = [];
+          let prefs: Preferences = {};
 
           try {
             const userId = await requireUserId();
+
+            prefs = await getPreferences(userId);
+
             const { data } = await supabase
               .from("events")
               .select("id,title,start_ts,end_ts,memo,source")
@@ -305,6 +339,12 @@ export function TamboChatProvider({
             // ignore failures
           }
 
+          const enabledGoals = (prefs.goals ?? []).filter(
+            (g) => g.enabled && g.text.trim()
+          );
+
+          const enabledBlocks = (prefs.timeBlocks ?? []).filter((b) => b.enabled);
+
           return {
             app: { name: "Tambo Planner", timezone: tz },
             selectedDate,
@@ -313,7 +353,25 @@ export function TamboChatProvider({
               endISO: end.toISOString(),
             },
             dayEvents: events,
+
+            // preferences injected into EVERY message automatically
+            preferences: {
+              timezone: prefs.timezone ?? tz,
+              goals: enabledGoals.map((g) => g.text),
+              timeBlocks: enabledBlocks.map((b) => ({
+                label: b.label,
+                days: b.days,
+                start: b.start,
+                end: b.end,
+              })),
+            },
+
             rules: [
+              // NEW rules
+              "Respect user goals (e.g., sleep by 10:30pm, wake at 5am).",
+              "Do not schedule events inside user timeBlocks (classes/busy time).",
+
+              // existing rules
               "If proposing a plan, ask user to confirm before calling create_events.",
               "Use get_schedule if you need more than today's events.",
               "When user says accept, call create_events.",

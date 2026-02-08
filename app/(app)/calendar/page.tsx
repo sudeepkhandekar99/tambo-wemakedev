@@ -1,11 +1,10 @@
-// app/calendar/page.tsx
 "use client";
 
 import * as React from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
 
-import { Calendar, dateFnsLocalizer, type View } from "react-big-calendar";
+import { Calendar, dateFnsLocalizer, View } from "react-big-calendar";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 
 import format from "date-fns/format";
@@ -14,7 +13,12 @@ import startOfWeek from "date-fns/startOfWeek";
 import getDay from "date-fns/getDay";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -26,7 +30,6 @@ type DbEvent = {
   end_ts: string;
   memo: string | null;
   source: "manual" | "ai" | string;
-  created_at?: string;
 };
 
 type RbcEvent = {
@@ -71,11 +74,12 @@ function toDbPatch(e: RbcEvent) {
   };
 }
 
-function padRange(start: Date, end: Date) {
-  return {
-    start: new Date(start.getTime() - 24 * 3600 * 1000),
-    end: new Date(end.getTime() + 24 * 3600 * 1000),
-  };
+function parseDateTimeLocal(value: string) {
+  // value like "2026-02-12T04:00" -> local Date
+  const [datePart, timePart] = value.split("T");
+  const [y, m, d] = datePart.split("-").map(Number);
+  const [hh, mm] = timePart.split(":").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
 }
 
 export default function CalendarPage() {
@@ -83,7 +87,6 @@ export default function CalendarPage() {
   const [loading, setLoading] = React.useState(true);
 
   const [view, setView] = React.useState<View>("week");
-  const [date, setDate] = React.useState<Date>(new Date());
 
   const [range, setRange] = React.useState<{ start: Date; end: Date }>(() => {
     const now = new Date();
@@ -135,7 +138,6 @@ export default function CalendarPage() {
 
   React.useEffect(() => {
     fetchEvents();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function openCreate(start: Date, end: Date) {
@@ -164,21 +166,14 @@ export default function CalendarPage() {
     if (!userId) return;
 
     const title = (draft.title ?? "").trim();
-    if (!title) {
-      toast.message("Add a title");
-      return;
-    }
-    if (draft.end <= draft.start) {
-      toast.message("End time must be after start");
-      return;
-    }
+    if (!title) return toast.message("Add a title");
+    if (draft.end <= draft.start) return toast.message("End must be after start");
 
     if (mode === "create") {
       const { error } = await supabase.from("events").insert({
         user_id: userId,
         ...toDbPatch(draft),
       });
-
       if (error) return toast.error(error.message);
       toast.success("Event added");
     } else {
@@ -218,9 +213,7 @@ export default function CalendarPage() {
 
   const eventPropGetter = React.useCallback((event: RbcEvent) => {
     const isAi = (event.source ?? "").toLowerCase() === "ai";
-    return {
-      className: isAi ? "rbc-ai-event" : "rbc-manual-event",
-    };
+    return { className: isAi ? "rbc-ai-event" : "rbc-manual-event" };
   }, []);
 
   return (
@@ -229,7 +222,7 @@ export default function CalendarPage() {
         <div>
           <div className="font-display text-2xl tracking-tight">Calendar</div>
           <div className="mt-1 text-sm text-muted-foreground">
-            Click and drag on the calendar to create an event. Click an event to edit.
+            Click and drag to create. Click an event to edit.
           </div>
         </div>
 
@@ -254,8 +247,6 @@ export default function CalendarPage() {
             events={events}
             startAccessor="start"
             endAccessor="end"
-            date={date}
-            onNavigate={(d) => setDate(d)}
             view={view}
             onView={(v) => setView(v)}
             views={["day", "week", "month"]}
@@ -275,7 +266,11 @@ export default function CalendarPage() {
                 end = r.end;
               }
 
-              const padded = padRange(start, end);
+              const padded = {
+                start: new Date(start.getTime() - 24 * 3600 * 1000),
+                end: new Date(end.getTime() + 24 * 3600 * 1000),
+              };
+
               setRange(padded);
               fetchEvents(padded);
             }}
@@ -288,8 +283,9 @@ export default function CalendarPage() {
         ) : null}
       </div>
 
+
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="rounded-[24px] border border-black/10 bg-white shadow-2xl">
+        <DialogContent className="rounded-[24px] border bg-background/95 shadow-2xl backdrop-blur">
           <DialogHeader>
             <DialogTitle className="font-display">
               {mode === "create" ? "New event" : "Edit event"}
@@ -313,16 +309,19 @@ export default function CalendarPage() {
                   <Input
                     type="datetime-local"
                     value={format(draft.start, "yyyy-MM-dd'T'HH:mm")}
-                    onChange={(e) => setDraft({ ...draft, start: new Date(e.target.value) })}
+                    onChange={(e) =>
+                      setDraft({ ...draft, start: parseDateTimeLocal(e.target.value) })
+                    }
                   />
                 </div>
-
                 <div className="space-y-1">
                   <div className="text-xs text-muted-foreground">End</div>
                   <Input
                     type="datetime-local"
                     value={format(draft.end, "yyyy-MM-dd'T'HH:mm")}
-                    onChange={(e) => setDraft({ ...draft, end: new Date(e.target.value) })}
+                    onChange={(e) =>
+                      setDraft({ ...draft, end: parseDateTimeLocal(e.target.value) })
+                    }
                   />
                 </div>
               </div>
@@ -354,7 +353,11 @@ export default function CalendarPage() {
                 </div>
 
                 {mode === "edit" ? (
-                  <Button variant="destructive" onClick={remove} className="rounded-full">
+                  <Button
+                    variant="destructive"
+                    onClick={remove}
+                    className="rounded-full"
+                  >
                     Delete
                   </Button>
                 ) : null}

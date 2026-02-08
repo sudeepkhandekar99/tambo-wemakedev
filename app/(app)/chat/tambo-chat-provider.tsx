@@ -6,6 +6,7 @@ import { TamboProvider } from "@tambo-ai/react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAppStore } from "@/lib/appStore";
 import { toast } from "sonner";
+import { formatInTimeZone } from "date-fns-tz";
 
 type DbEvent = {
   id: string;
@@ -22,6 +23,7 @@ function startOfDay(d: Date) {
   x.setHours(0, 0, 0, 0);
   return x;
 }
+
 function endOfDay(d: Date) {
   const x = new Date(d);
   x.setHours(23, 59, 59, 999);
@@ -35,14 +37,15 @@ async function requireUserId() {
   return data.user.id;
 }
 
-/* ----------------------------
-   Tools
------------------------------ */
+/* =========================
+   Tool Schemas
+   ========================= */
 
 const getScheduleInput = z.object({
   startISO: z.string(),
   endISO: z.string(),
 });
+
 const getScheduleOutput = z.object({
   events: z.array(
     z.object({
@@ -50,6 +53,8 @@ const getScheduleOutput = z.object({
       title: z.string(),
       start_ts: z.string(),
       end_ts: z.string(),
+      start_local: z.string(),
+      end_local: z.string(),
       memo: z.string().nullable(),
       source: z.string().nullable().optional(),
     })
@@ -58,15 +63,19 @@ const getScheduleOutput = z.object({
 
 const createEventsInput = z.object({
   events: z.array(
-    z.object({
-      title: z.string(),
-      startISO: z.string(),
-      endISO: z.string(),
-      memo: z.string().optional().nullable(),
-      source: z.string().optional().default("ai"),
-    })
+    z.union([
+      z.object({
+        title: z.string(),
+        startISO: z.string(),
+        endISO: z.string(),
+        memo: z.string().optional().nullable(),
+        source: z.string().optional().default("ai"),
+      }),
+      z.string(),
+    ])
   ),
 });
+
 const createEventsOutput = z.object({
   created: z.number(),
 });
@@ -80,12 +89,28 @@ const updateEventInput = z.object({
     memo: z.string().optional().nullable(),
   }),
 });
-const updateEventOutput = z.object({ ok: z.boolean() });
 
-const deleteEventInput = z.object({ id: z.string() });
-const deleteEventOutput = z.object({ ok: z.boolean() });
+const updateEventOutput = z.object({
+  ok: z.boolean(),
+});
 
-export function TamboChatProvider({ children }: { children: React.ReactNode }) {
+const deleteEventInput = z.object({
+  id: z.string(),
+});
+
+const deleteEventOutput = z.object({
+  ok: z.boolean(),
+});
+
+/* =========================
+   Provider
+   ========================= */
+
+export function TamboChatProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const selectedDate = useAppStore((s) => s.selectedDate);
 
   const apiKey =
@@ -94,32 +119,27 @@ export function TamboChatProvider({ children }: { children: React.ReactNode }) {
     "";
 
   if (!apiKey) {
-    return (
-      <div className="p-6">
-        <div className="rounded-2xl border bg-card p-5">
-          <div className="font-medium">Missing Tambo API key</div>
-          <div className="mt-1 text-sm text-muted-foreground">
-            Add{" "}
-            <code className="rounded bg-muted px-1">NEXT_PUBLIC_TAMBO_API_KEY</code>{" "}
-            in <code className="rounded bg-muted px-1">.env.local</code>, then restart dev
-            server.
-          </div>
-        </div>
-      </div>
-    );
+    console.warn("Missing NEXT_PUBLIC_TAMBO_API_KEY in .env.local");
   }
 
   return (
     <TamboProvider
       apiKey={apiKey}
+      contextKey="planner"
       tools={[
         {
           name: "get_schedule",
-          description: "Fetch calendar events for the user in a given ISO time range.",
+          description:
+            "Fetch calendar events for the user in a given time range.",
           inputSchema: getScheduleInput,
           outputSchema: getScheduleOutput,
-          tool: async ({ startISO, endISO }: z.infer<typeof getScheduleInput>) => {
+          tool: async ({
+            startISO,
+            endISO,
+          }: z.infer<typeof getScheduleInput>) => {
             const userId = await requireUserId();
+            const tz =
+              Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
             const { data, error } = await supabase
               .from("events")
@@ -130,34 +150,82 @@ export function TamboChatProvider({ children }: { children: React.ReactNode }) {
               .order("start_ts", { ascending: true });
 
             if (error) throw new Error(error.message);
-            return { events: (data ?? []) as DbEvent[] };
+
+            const rows = (data ?? []) as DbEvent[];
+
+            return {
+              events: rows.map((e) => ({
+                ...e,
+                start_local: formatInTimeZone(
+                  new Date(e.start_ts),
+                  tz,
+                  "MMM d, h:mm a"
+                ),
+                end_local: formatInTimeZone(
+                  new Date(e.end_ts),
+                  tz,
+                  "MMM d, h:mm a"
+                ),
+              })),
+            };
           },
         },
+
         {
-          name: "create_events",
-          description:
-            "Create one or more calendar events for the user. Only call after the user confirms.",
-          inputSchema: createEventsInput,
-          outputSchema: createEventsOutput,
-          tool: async ({ events }: z.infer<typeof createEventsInput>) => {
-            const userId = await requireUserId();
+            name: "create_events",
+            description:
+                "Create one or more calendar events for the user. Accepts events as objects or JSON strings.",
+            inputSchema: createEventsInput,
+            outputSchema: createEventsOutput,
+            tool: async ({ events }: z.infer<typeof createEventsInput>) => {
+                const userId = await requireUserId();
 
-            const rows = events.map((e) => ({
-              user_id: userId,
-              title: e.title,
-              start_ts: new Date(e.startISO).toISOString(),
-              end_ts: new Date(e.endISO).toISOString(),
-              memo: e.memo ?? null,
-              source: e.source ?? "ai",
-            }));
+                // Normalize: convert JSON strings -> objects
+                const normalized = events.map((e) => {
+                if (typeof e === "string") {
+                    try {
+                    return JSON.parse(e) as {
+                        title: string;
+                        startISO: string;
+                        endISO: string;
+                        memo?: string | null;
+                        source?: string;
+                    };
+                    } catch {
+                    throw new Error("create_events received an invalid JSON string event.");
+                    }
+                }
+                return e;
+                });
 
-            const { error } = await supabase.from("events").insert(rows);
-            if (error) throw new Error(error.message);
+                const rows = normalized.map((e) => {
+                const start = new Date(e.startISO);
+                const end = new Date(e.endISO);
 
-            toast.success(`Added ${rows.length} event(s)`);
-            return { created: rows.length };
-          },
+                if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+                    throw new Error(
+                    `Invalid time value in create_events. startISO=${e.startISO} endISO=${e.endISO}`
+                    );
+                }
+
+                return {
+                    user_id: userId,
+                    title: e.title,
+                    start_ts: start.toISOString(),
+                    end_ts: end.toISOString(),
+                    memo: e.memo ?? null,
+                    source: e.source ?? "ai",
+                };
+                });
+
+                const { error } = await supabase.from("events").insert(rows);
+                if (error) throw new Error(error.message);
+
+                toast.success(`Added ${rows.length} event(s)`);
+                return { created: rows.length };
+            },
         },
+
         {
           name: "update_event",
           description: "Update an existing event by id.",
@@ -186,6 +254,7 @@ export function TamboChatProvider({ children }: { children: React.ReactNode }) {
             return { ok: true };
           },
         },
+
         {
           name: "delete_event",
           description: "Delete an event by id.",
@@ -207,49 +276,52 @@ export function TamboChatProvider({ children }: { children: React.ReactNode }) {
           },
         },
       ]}
-      contextHelpers={[
-        {
-          name: "planner",
-          fn: async () => {
-            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      contextHelpers={{
+        planner: async () => {
+          const tz =
+            Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
-            const base = selectedDate
-              ? new Date(`${selectedDate}T00:00:00`)
-              : new Date();
+          const base = selectedDate
+            ? new Date(`${selectedDate}T00:00:00`)
+            : new Date();
 
-            const start = startOfDay(base);
-            const end = endOfDay(base);
+          const start = startOfDay(base);
+          const end = endOfDay(base);
 
-            let events: DbEvent[] = [];
-            try {
-              const userId = await requireUserId();
-              const { data } = await supabase
-                .from("events")
-                .select("id,title,start_ts,end_ts,memo,source")
-                .eq("user_id", userId)
-                .gte("start_ts", start.toISOString())
-                .lte("start_ts", end.toISOString())
-                .order("start_ts", { ascending: true });
+          let events: DbEvent[] = [];
 
-              events = (data ?? []) as DbEvent[];
-            } catch {
-              // ignore context failures
-            }
+          try {
+            const userId = await requireUserId();
+            const { data } = await supabase
+              .from("events")
+              .select("id,title,start_ts,end_ts,memo,source")
+              .eq("user_id", userId)
+              .gte("start_ts", start.toISOString())
+              .lte("start_ts", end.toISOString())
+              .order("start_ts", { ascending: true });
 
-            return {
-              app: { name: "Tambo Planner", timezone: tz },
-              selectedDate,
-              dayRange: { startISO: start.toISOString(), endISO: end.toISOString() },
-              dayEvents: events,
-              rules: [
-                "If proposing a plan, ask user to confirm before calling create_events.",
-                "If you need more than today's events, call get_schedule.",
-                "When user says accept, call create_events.",
-              ],
-            };
-          },
+            events = (data ?? []) as DbEvent[];
+          } catch {
+            // ignore failures
+          }
+
+          return {
+            app: { name: "Tambo Planner", timezone: tz },
+            selectedDate,
+            dayRange: {
+              startISO: start.toISOString(),
+              endISO: end.toISOString(),
+            },
+            dayEvents: events,
+            rules: [
+              "If proposing a plan, ask user to confirm before calling create_events.",
+              "Use get_schedule if you need more than today's events.",
+              "When user says accept, call create_events.",
+              "Prefer displaying start_local/end_local times to the user.",
+            ],
+          };
         },
-      ]}
+      }}
     >
       {children}
     </TamboProvider>
